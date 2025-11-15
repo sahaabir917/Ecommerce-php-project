@@ -6,17 +6,19 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$roleName = $_SESSION['role_name'] ?? '';
-$isAdminOrManager = in_array($roleName, ['Admin', 'Manager'], true);
+// 统一角色判断
+$roleNameRaw = $_SESSION['role_name'] ?? '';
+$roleName = strtolower($roleNameRaw);
+$isAdminOrManager = in_array($roleName, ['admin', 'manager'], true);
 
 $errors = [];
 $success = "";
 
-// Fetch categories for dropdown
+// 下拉菜单用：读取所有分类
 $catStmt = $pdo->query("SELECT id, name FROM categories ORDER BY name ASC");
 $categories = $catStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Handle Add Subcategory
+// 只有 Admin/Manager 才能新增子分类
 if ($isAdminOrManager && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $category_id = (int)($_POST['category_id'] ?? 0);
     $name = trim($_POST['name'] ?? '');
@@ -30,7 +32,10 @@ if ($isAdminOrManager && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-        $stmt = $pdo->prepare("INSERT INTO subcategories (category_id, name, description) VALUES (?, ?, ?)");
+        $stmt = $pdo->prepare("
+            INSERT INTO subcategories (category_id, name, description)
+            VALUES (?, ?, ?)
+        ");
         if ($stmt->execute([$category_id, $name, $desc])) {
             $success = "Subcategory added successfully.";
         } else {
@@ -39,7 +44,7 @@ if ($isAdminOrManager && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch subcategories with category name
+// 子分类列表：带上所属分类名称
 $subStmt = $pdo->query("
     SELECT s.id, s.name, s.description, s.created_at, c.name AS category_name
     FROM subcategories s
@@ -53,7 +58,8 @@ $subcategories = $subStmt->fetchAll(PDO::FETCH_ASSOC);
 <head>
     <meta charset="UTF-8">
     <title>Subcategories</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 </head>
 <body>
 <div class="d-flex">
@@ -67,6 +73,8 @@ $subcategories = $subStmt->fetchAll(PDO::FETCH_ASSOC);
                 You have no access to this URL.
             </div>
         <?php else: ?>
+
+            <!-- Add Subcategory -->
             <div class="card mb-4">
                 <div class="card-header">
                     <h5 class="mb-0">Add Subcategory</h5>
@@ -81,6 +89,7 @@ $subcategories = $subStmt->fetchAll(PDO::FETCH_ASSOC);
                             </ul>
                         </div>
                     <?php endif; ?>
+
                     <?php if ($success): ?>
                         <div class="alert alert-success"><?= $success ?></div>
                     <?php endif; ?>
@@ -113,6 +122,7 @@ $subcategories = $subStmt->fetchAll(PDO::FETCH_ASSOC);
                 </div>
             </div>
 
+            <!-- Subcategory List -->
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">All Subcategories</h5>
@@ -150,6 +160,7 @@ $subcategories = $subStmt->fetchAll(PDO::FETCH_ASSOC);
                     </div>
                 </div>
             </div>
+
         <?php endif; ?>
     </main>
 </div>

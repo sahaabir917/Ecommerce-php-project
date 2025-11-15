@@ -6,13 +6,15 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$roleName = $_SESSION['role_name'] ?? '';
-$isAdminOrManager = in_array($roleName, ['Admin', 'Manager'], true);
+// 统一角色判断
+$roleNameRaw = $_SESSION['role_name'] ?? '';
+$roleName = strtolower($roleNameRaw);
+$isAdminOrManager = in_array($roleName, ['admin', 'manager'], true);
 
 $errors = [];
 $success = "";
 
-// Handle Add Category only if Admin/Manager
+// 只有 Admin/Manager 才能添加分类
 if ($isAdminOrManager && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim($_POST['name'] ?? '');
     $desc = trim($_POST['description'] ?? '');
@@ -31,7 +33,7 @@ if ($isAdminOrManager && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch all categories
+// 读取所有分类
 $categoryStmt = $pdo->query("SELECT * FROM categories ORDER BY id DESC");
 $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
@@ -40,7 +42,8 @@ $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
 <head>
     <meta charset="UTF-8">
     <title>Categories</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 </head>
 <body>
 <div class="d-flex">
@@ -54,6 +57,8 @@ $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
                 You have no access to this URL.
             </div>
         <?php else: ?>
+
+            <!-- Add Category -->
             <div class="card mb-4">
                 <div class="card-header">
                     <h5 class="mb-0">Add Category</h5>
@@ -68,6 +73,7 @@ $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
                             </ul>
                         </div>
                     <?php endif; ?>
+
                     <?php if ($success): ?>
                         <div class="alert alert-success"><?= $success ?></div>
                     <?php endif; ?>
@@ -88,6 +94,7 @@ $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
                 </div>
             </div>
 
+            <!-- Category List -->
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">All Categories</h5>
@@ -123,6 +130,7 @@ $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
                     </div>
                 </div>
             </div>
+
         <?php endif; ?>
     </main>
 </div>

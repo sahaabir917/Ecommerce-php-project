@@ -3,7 +3,7 @@
 session_start();
 
 $host   = "localhost";
-$dbname = "ecommerce";   // database name
+$dbname = "ecommerce2";   // database name
 $dbuser = "root";        // your MySQL username
 $dbpass = "";            // your MySQL password (empty for XAMPP)
 
