@@ -6,10 +6,11 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$roleName = $_SESSION['role_name'] ?? '';
-$isAdminOrManager = in_array($roleName, ['Admin', 'Manager'], true);
+// 统一转成小写来判断权限（不再受数据库大小写影响）
+$roleName = strtolower($_SESSION['role_name'] ?? '');
+$isAdminOrManager = in_array($roleName, ['admin', 'manager'], true);
 
-// Only Admin/Manager see all users
+// Admin/Manager 才能看到所有用户
 $users = [];
 if ($isAdminOrManager) {
     $stmt = $pdo->query("
@@ -37,7 +38,7 @@ if ($isAdminOrManager) {
 
         <?php if ($isAdminOrManager): ?>
             <p class="text-muted">
-                You are an <strong><?= htmlspecialchars($roleName) ?></strong>.  
+                You are an <strong><?= htmlspecialchars($_SESSION['role_name']) ?></strong>.
                 You can manage users, categories, subcategories, and products.
             </p>
 
@@ -82,11 +83,14 @@ if ($isAdminOrManager) {
                     </div>
                 </div>
             </div>
+
         <?php else: ?>
+
             <p class="text-muted">
-                You are logged in as a regular <strong>User</strong>.  
+                You are logged in as a regular <strong>User</strong>.
                 You do not have access to management pages.
             </p>
+
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">Your Profile</h5>
@@ -94,9 +98,12 @@ if ($isAdminOrManager) {
                 <div class="card-body">
                     <p><strong>Name:</strong> <?= htmlspecialchars($_SESSION['user_name'] ?? '') ?></p>
                     <p><strong>Email:</strong> <?= htmlspecialchars($_SESSION['user_email'] ?? '') ?></p>
-                    <p class="text-muted mb-0">Contact an Admin or Manager if you need higher access.</p>
+                    <p class="text-muted mb-0">
+                        Contact an Admin or Manager if you need higher access.
+                    </p>
                 </div>
             </div>
+
         <?php endif; ?>
     </main>
 </div>
