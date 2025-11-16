@@ -32,6 +32,11 @@ $isAdminOrManager = in_array($roleName, ['Admin', 'Manager'], true);
                     Products
                 </a>
             </li>
+            <li>
+                <a href="orders.php" class="nav-link text-white <?= basename($_SERVER['PHP_SELF']) === 'orders.php' ? 'active' : '' ?>">
+                    Orders
+                </a>
+            </li>
         <?php endif; ?>
     </ul>
     <hr>

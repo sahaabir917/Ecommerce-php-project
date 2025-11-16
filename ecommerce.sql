@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Nov 11, 2025 at 10:20 PM
+-- Generation Time: Nov 16, 2025 at 10:20 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.0.30
 
@@ -20,21 +20,6 @@ SET time_zone = "+00:00";
 --
 -- Database: `ecommerce`
 --
-
--- --------------------------------------------------------
-
---
--- Table structure for table `carts`
---
-
-CREATE TABLE `carts` (
-  `id` int(10) UNSIGNED NOT NULL,
-  `user_id` int(10) UNSIGNED NOT NULL,
-  `product_id` int(10) UNSIGNED NOT NULL,
-  `quantity` int(10) UNSIGNED NOT NULL DEFAULT 1,
-  `status` enum('selected','not-selected') NOT NULL DEFAULT 'selected',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -56,35 +41,7 @@ CREATE TABLE `categories` (
 INSERT INTO `categories` (`id`, `name`, `description`, `created_at`) VALUES
 (1, 'Electronics', 'All Electronics Items', '2025-11-09 02:28:46'),
 (2, 'Books', 'All section of books', '2025-11-09 02:41:16'),
-(3, 'Glocery', 'All gloceries', '2025-11-10 19:06:45'),
-(4, 'sadsadad', 'sdaasd', '2025-11-10 19:54:59');
-
--- --------------------------------------------------------
-
---
--- Table structure for table `deals`
---
-
-CREATE TABLE `deals` (
-  `id` int(10) UNSIGNED NOT NULL,
-  `deal_name` varchar(150) NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `deal_products`
---
-
-CREATE TABLE `deal_products` (
-  `id` int(10) UNSIGNED NOT NULL,
-  `deal_id` int(10) UNSIGNED NOT NULL,
-  `product_id` int(10) UNSIGNED NOT NULL,
-  `available_quantity` int(10) UNSIGNED NOT NULL DEFAULT 0,
-  `offered_price` decimal(10,2) NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+(3, 'Grocery', 'All groceries', '2025-11-10 19:06:45');
 
 -- --------------------------------------------------------
 
@@ -94,22 +51,27 @@ CREATE TABLE `deal_products` (
 
 CREATE TABLE `orders` (
   `id` int(10) UNSIGNED NOT NULL,
+  `user_id` int(10) UNSIGNED NOT NULL,
   `order_date` datetime NOT NULL DEFAULT current_timestamp(),
-  `cart_id` int(10) UNSIGNED NOT NULL,
-  `payment_id` int(10) UNSIGNED NOT NULL
+  `card_number` varchar(25) DEFAULT NULL,
+  `card_holder_name` varchar(150) DEFAULT NULL,
+  `total_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `status` enum('pending','processing','shipped','delivered','cancelled') NOT NULL DEFAULT 'pending',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
 --
--- Table structure for table `payments`
+-- Table structure for table `order_items`
 --
 
-CREATE TABLE `payments` (
+CREATE TABLE `order_items` (
   `id` int(10) UNSIGNED NOT NULL,
-  `card_number` varchar(25) NOT NULL,
-  `amount` decimal(10,2) NOT NULL,
-  `card_holder_name` varchar(150) NOT NULL,
+  `order_id` int(10) UNSIGNED NOT NULL,
+  `product_id` int(10) UNSIGNED NOT NULL,
+  `quantity` int(10) UNSIGNED NOT NULL DEFAULT 1,
+  `price_at_purchase` decimal(10,2) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -179,24 +141,8 @@ CREATE TABLE `subcategories` (
 
 INSERT INTO `subcategories` (`id`, `category_id`, `name`, `description`, `created_at`) VALUES
 (5, 1, 'Laptop', 'All brand and no brand laptop is here ', '2025-11-09 02:29:43'),
-(6, 1, '', NULL, '2025-11-09 02:29:43'),
 (7, 2, 'Comic', 'Comic books', '2025-11-09 02:41:31'),
-(8, 2, 'dfssfd', 'fsf', '2025-11-09 02:43:14'),
 (9, 3, 'Chicken', 'All Chicken wings', '2025-11-10 19:07:21');
-
--- --------------------------------------------------------
-
---
--- Table structure for table `trackers`
---
-
-CREATE TABLE `trackers` (
-  `id` int(10) UNSIGNED NOT NULL,
-  `order_id` int(10) UNSIGNED NOT NULL,
-  `details` varchar(255) NOT NULL,
-  `comment` text DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -228,46 +174,25 @@ INSERT INTO `users` (`id`, `name`, `email`, `phone`, `address`, `password`, `rol
 --
 
 --
--- Indexes for table `carts`
---
-ALTER TABLE `carts`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_carts_user` (`user_id`),
-  ADD KEY `fk_carts_product` (`product_id`);
-
---
 -- Indexes for table `categories`
 --
 ALTER TABLE `categories`
   ADD PRIMARY KEY (`id`);
 
 --
--- Indexes for table `deals`
---
-ALTER TABLE `deals`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `deal_products`
---
-ALTER TABLE `deal_products`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_deal_products_deal` (`deal_id`),
-  ADD KEY `fk_deal_products_product` (`product_id`);
-
---
 -- Indexes for table `orders`
 --
 ALTER TABLE `orders`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_orders_cart` (`cart_id`),
-  ADD KEY `fk_orders_payment` (`payment_id`);
+  ADD KEY `fk_orders_user` (`user_id`);
 
 --
--- Indexes for table `payments`
+-- Indexes for table `order_items`
 --
-ALTER TABLE `payments`
-  ADD PRIMARY KEY (`id`);
+ALTER TABLE `order_items`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `fk_order_items_order` (`order_id`),
+  ADD KEY `fk_order_items_product` (`product_id`);
 
 --
 -- Indexes for table `products`
@@ -291,13 +216,6 @@ ALTER TABLE `subcategories`
   ADD KEY `fk_subcategories_category` (`category_id`);
 
 --
--- Indexes for table `trackers`
---
-ALTER TABLE `trackers`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_trackers_order` (`order_id`);
-
---
 -- Indexes for table `users`
 --
 ALTER TABLE `users`
@@ -310,28 +228,10 @@ ALTER TABLE `users`
 --
 
 --
--- AUTO_INCREMENT for table `carts`
---
-ALTER TABLE `carts`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
 -- AUTO_INCREMENT for table `categories`
 --
 ALTER TABLE `categories`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
-
---
--- AUTO_INCREMENT for table `deals`
---
-ALTER TABLE `deals`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `deal_products`
---
-ALTER TABLE `deal_products`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `orders`
@@ -340,9 +240,9 @@ ALTER TABLE `orders`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT for table `payments`
+-- AUTO_INCREMENT for table `order_items`
 --
-ALTER TABLE `payments`
+ALTER TABLE `order_items`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -364,12 +264,6 @@ ALTER TABLE `subcategories`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
--- AUTO_INCREMENT for table `trackers`
---
-ALTER TABLE `trackers`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
@@ -380,25 +274,17 @@ ALTER TABLE `users`
 --
 
 --
--- Constraints for table `carts`
---
-ALTER TABLE `carts`
-  ADD CONSTRAINT `fk_carts_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_carts_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
---
--- Constraints for table `deal_products`
---
-ALTER TABLE `deal_products`
-  ADD CONSTRAINT `fk_deal_products_deal` FOREIGN KEY (`deal_id`) REFERENCES `deals` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_deal_products_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON UPDATE CASCADE;
-
---
 -- Constraints for table `orders`
 --
 ALTER TABLE `orders`
-  ADD CONSTRAINT `fk_orders_cart` FOREIGN KEY (`cart_id`) REFERENCES `carts` (`id`) ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_orders_payment` FOREIGN KEY (`payment_id`) REFERENCES `payments` (`id`) ON UPDATE CASCADE;
+  ADD CONSTRAINT `fk_orders_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints for table `order_items`
+--
+ALTER TABLE `order_items`
+  ADD CONSTRAINT `fk_order_items_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_order_items_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON UPDATE CASCADE;
 
 --
 -- Constraints for table `products`
@@ -412,12 +298,6 @@ ALTER TABLE `products`
 --
 ALTER TABLE `subcategories`
   ADD CONSTRAINT `fk_subcategories_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
---
--- Constraints for table `trackers`
---
-ALTER TABLE `trackers`
-  ADD CONSTRAINT `fk_trackers_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Constraints for table `users`
