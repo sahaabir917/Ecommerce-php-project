@@ -49,7 +49,7 @@ $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
 <div class="container py-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h3>Order #<?= (int)$orderId ?></h3>
-    <a href="index.php" class="btn btn-outline-secondary btn-sm">← Home</a>
+    <a href="orders.php" class="btn btn-outline-secondary btn-sm">← Back to Orders</a>
   </div>
 
   <div class="row mb-4">

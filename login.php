@@ -32,7 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_email'] = $user['email'];
             $_SESSION['role_name']  = $user['role_name'];
 
-            header("Location: dashboard.php");
+            // Redirect based on role
+            if (in_array($user['role_name'], ['Admin', 'Manager'], true)) {
+                header("Location: dashboard.php");
+            } else {
+                header("Location: index.php");
+            }
             exit;
         } else {
             $errors[] = "Invalid email or password.";
