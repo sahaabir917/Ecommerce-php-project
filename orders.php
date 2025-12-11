@@ -52,6 +52,185 @@ $ordersStmt = $pdo->query("
     FROM orders o
     JOIN users u ON o.user_id = u.id
     JOIN payments p ON o.payment_id = p.id
+    // Delete order items first (due to foreign key)
+    $stmt = $pdo->prepare("DELETE FROM order_items WHERE order_id = ?");
+    $stmt->execute([$deleteId]);
+
+    // Then delete the order
+    $stmt = $pdo->prepare("DELETE FROM orders WHERE id = ?");
+    if ($stmt->execute([$deleteId])) {
+        $_SESSION['order_success'] = "Order deleted successfully.";
+        header("Location: orders.php");
+        exit;
+    } else {
+        $errors[] = "Failed to delete order.";
+    }
+}
+
+// Handle Add/Edit Order
+if ($isAdminOrManager && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $order_id = (int)($_POST['order_id'] ?? 0);
+    $user_id = (int)($_POST['user_id'] ?? 0);
+    $order_date = trim($_POST['order_date'] ?? '');
+    $card_number = trim($_POST['card_number'] ?? '');
+    $card_holder_name = trim($_POST['card_holder_name'] ?? '');
+    $status = trim($_POST['status'] ?? 'pending');
+
+    // Get products and quantities
+    $product_ids = $_POST['product_ids'] ?? [];
+    $quantities = $_POST['quantities'] ?? [];
+
+    // Validation
+    if ($user_id <= 0) {
+        $errors[] = "User selection is required.";
+    }
+    if ($order_date === '') {
+        $errors[] = "Order date is required.";
+    }
+    if (empty($product_ids) || empty(array_filter($product_ids))) {
+        $errors[] = "At least one product is required.";
+    }
+
+    if (empty($errors)) {
+        try {
+            $pdo->beginTransaction();
+
+            // Calculate total amount
+            $total_amount = 0;
+            $orderItems = [];
+
+            foreach ($product_ids as $index => $product_id) {
+                $product_id = (int)$product_id;
+                $quantity = (int)($quantities[$index] ?? 0);
+
+                if ($product_id > 0 && $quantity > 0) {
+                    // Get product price
+                    $stmt = $pdo->prepare("SELECT price FROM products WHERE id = ?");
+                    $stmt->execute([$product_id]);
+                    $product = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                    if ($product) {
+                        $price = $product['price'];
+                        $total_amount += $price * $quantity;
+                        $orderItems[] = [
+                            'product_id' => $product_id,
+                            'quantity' => $quantity,
+                            'price' => $price
+                        ];
+                    }
+                }
+            }
+
+            if ($order_id > 0) {
+                // Update existing order
+                $stmt = $pdo->prepare("
+                    UPDATE orders
+                    SET user_id = ?, order_date = ?, card_number = ?, card_holder_name = ?,
+                        total_amount = ?, status = ?
+                    WHERE id = ?
+                ");
+                $stmt->execute([$user_id, $order_date, $card_number, $card_holder_name, $total_amount, $status, $order_id]);
+
+                // Delete existing order items
+                $stmt = $pdo->prepare("DELETE FROM order_items WHERE order_id = ?");
+                $stmt->execute([$order_id]);
+
+                // Insert new order items
+                $stmt = $pdo->prepare("
+                    INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase)
+                    VALUES (?, ?, ?, ?)
+                ");
+
+                foreach ($orderItems as $item) {
+                    $stmt->execute([
+                        $order_id,
+                        $item['product_id'],
+                        $item['quantity'],
+                        $item['price']
+                    ]);
+                }
+
+                $pdo->commit();
+
+                // Redirect after successful update
+                $_SESSION['order_success'] = "Order updated successfully.";
+                header("Location: orders.php");
+                exit;
+
+            } else {
+                // Insert new order
+                $stmt = $pdo->prepare("
+                    INSERT INTO orders (user_id, order_date, card_number, card_holder_name, total_amount, status)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([$user_id, $order_date, $card_number, $card_holder_name, $total_amount, $status]);
+                $new_order_id = $pdo->lastInsertId();
+
+                // Insert order items
+                $stmt = $pdo->prepare("
+                    INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase)
+                    VALUES (?, ?, ?, ?)
+                ");
+
+                foreach ($orderItems as $item) {
+                    $stmt->execute([
+                        $new_order_id,
+                        $item['product_id'],
+                        $item['quantity'],
+                        $item['price']
+                    ]);
+                }
+
+                $pdo->commit();
+
+                // Redirect after successful creation
+                $_SESSION['order_success'] = "Order added successfully.";
+                header("Location: orders.php");
+                exit;
+            }
+
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $errors[] = "Failed to save order: " . $e->getMessage();
+        }
+    }
+}
+
+// Fetch order for editing if edit parameter is present
+$editOrder = null;
+$editOrderItems = [];
+if ($isAdminOrManager && isset($_GET['edit'])) {
+    $editId = (int)$_GET['edit'];
+    $stmt = $pdo->prepare("SELECT * FROM orders WHERE id = ?");
+    $stmt->execute([$editId]);
+    $editOrder = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($editOrder) {
+        $stmt = $pdo->prepare("
+            SELECT oi.*, p.name as product_name
+            FROM order_items oi
+            JOIN products p ON oi.product_id = p.id
+            WHERE oi.order_id = ?
+        ");
+        $stmt->execute([$editId]);
+        $editOrderItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+}
+
+// Fetch all users for dropdown
+$usersStmt = $pdo->query("SELECT id, name, email FROM users ORDER BY name ASC");
+$users = $usersStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch all products for dropdown
+$productsStmt = $pdo->query("SELECT id, name, price FROM products ORDER BY name ASC");
+$products = $productsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch all orders with user information
+$ordersStmt = $pdo->query("
+    SELECT o.id, o.order_date, o.card_number, o.card_holder_name, o.total_amount, o.status,
+           u.name AS user_name, u.email AS user_email
+    FROM orders o
+    JOIN users u ON o.user_id = u.id
     ORDER BY o.id DESC
 ");
 $orders = $ordersStmt->fetchAll(PDO::FETCH_ASSOC);
