@@ -10,7 +10,23 @@ if (!isset($_SESSION['cart_deals']))    $_SESSION['cart_deals']    = [];
 
 $cartCount = array_sum($_SESSION['cart_products']) + array_sum($_SESSION['cart_deals']);
 
+// Handle search
+$searchQuery = trim($_GET['search'] ?? '');
+$searchResults = [];
 
+if ($searchQuery !== '') {
+    $searchStmt = $pdo->prepare("
+        SELECT p.*, c.name AS category_name, s.name AS subcategory_name
+        FROM products p, categories c, subcategories s
+        WHERE p.category_id = c.id
+          AND p.subcategory_id = s.id
+          AND (p.name LIKE ? OR p.description LIKE ? OR c.name LIKE ? OR s.name LIKE ?)
+        ORDER BY p.id DESC
+    ");
+    $searchTerm = '%' . $searchQuery . '%';
+    $searchStmt->execute([$searchTerm, $searchTerm, $searchTerm, $searchTerm]);
+    $searchResults = $searchStmt->fetchAll(PDO::FETCH_ASSOC);
+}
 
 // Categories with product counts
 $catStmt = $pdo->query("
@@ -70,8 +86,8 @@ function productCard($p){
     return "
     <div class='col-12 col-sm-6 col-lg-3 mb-4'>
       <div class='card h-100 shadow-sm'>
-        <div class='ratio ratio-16x9'>
-          <img src='{$img}' alt='{$title}' class='card-img-top object-fit-cover'>
+        <div class='d-flex justify-content-center align-items-center p-3'>
+          <img src='{$img}' alt='{$title}' class='object-fit-cover rounded' style='width:250px; height:250px;'>
         </div>
         <div class='card-body d-flex flex-column'>
           <h6 class='card-title mb-1'>{$title}</h6>
@@ -144,6 +160,42 @@ function productCard($p){
     </div>
   </div>
 
+  <!-- Search Bar -->
+  <div class="mb-4">
+    <form method="get" action="index.php" class="d-flex gap-2">
+      <input type="text" name="search" class="form-control" placeholder="Search products, categories..."
+             value="<?= h($searchQuery) ?>" autofocus>
+      <button type="submit" class="btn btn-primary">Search</button>
+      <?php if ($searchQuery !== ''): ?>
+        <a href="index.php" class="btn btn-outline-secondary">Clear</a>
+      <?php endif; ?>
+    </form>
+  </div>
+
+  <!-- Search Results -->
+  <?php if ($searchQuery !== ''): ?>
+  <section class="mb-5">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="section-title">
+        <span class="bar"></span>
+        <h4 class="mb-0">Search Results for "<?= h($searchQuery) ?>"</h4>
+      </div>
+      <span class="badge bg-primary"><?= count($searchResults) ?> found</span>
+    </div>
+    <div class="row">
+      <?php if (empty($searchResults)): ?>
+        <div class="col-12">
+          <div class="alert alert-light border">
+            No products found matching "<?= h($searchQuery) ?>". Try different keywords.
+          </div>
+        </div>
+      <?php else: ?>
+        <?php foreach($searchResults as $p) echo productCard($p); ?>
+      <?php endif; ?>
+    </div>
+  </section>
+  <?php else: ?>
+
   <!-- Hero -->
   <div class="hero p-4 p-md-5 mb-4">
     <h1 class="display-6 fw-bold mb-2">Discover Products You’ll Love</h1>
@@ -214,6 +266,8 @@ function productCard($p){
       <?php else: foreach($budget as $p) echo productCard($p); endif; ?>
     </div>
   </section>
+
+  <?php endif; ?>
 
   <footer class="text-center text-muted small py-3">
     © <?= date('Y') ?> MyShop.

@@ -10,23 +10,68 @@ $roleName = $_SESSION['role_name'] ?? '';
 $isAdminOrManager = in_array($roleName, ['Admin', 'Manager'], true);
 
 $errors = [];
-$success = "";
+$success = $_SESSION['success_message'] ?? "";
+unset($_SESSION['success_message']);
+if (!empty($_SESSION['error_message'])) {
+    $errors[] = $_SESSION['error_message'];
+    unset($_SESSION['error_message']);
+}
+$editCategory = null;
 
-// Handle Add Category only if Admin/Manager
+// Handle Delete
+if ($isAdminOrManager && isset($_GET['delete'])) {
+    $deleteId = (int)$_GET['delete'];
+    try {
+        $stmt = $pdo->prepare("DELETE FROM categories WHERE id = ?");
+        if ($stmt->execute([$deleteId])) {
+            $_SESSION['success_message'] = "Category deleted successfully.";
+        }
+    } catch (PDOException $e) {
+        $_SESSION['error_message'] = "Cannot delete category. It may be in use by products or subcategories.";
+    }
+    header("Location: categories.php");
+    exit;
+}
+
+// Handle Edit - Load category data
+if ($isAdminOrManager && isset($_GET['edit'])) {
+    $editId = (int)$_GET['edit'];
+    $stmt = $pdo->prepare("SELECT * FROM categories WHERE id = ?");
+    $stmt->execute([$editId]);
+    $editCategory = $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
+// Handle Add/Update Category
 if ($isAdminOrManager && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim($_POST['name'] ?? '');
     $desc = trim($_POST['description'] ?? '');
+    $categoryId = (int)($_POST['category_id'] ?? 0);
 
     if ($name === '') {
         $errors[] = "Category name is required.";
     }
 
     if (empty($errors)) {
-        $stmt = $pdo->prepare("INSERT INTO categories (name, description) VALUES (?, ?)");
-        if ($stmt->execute([$name, $desc])) {
-            $success = "Category added successfully.";
+        if ($categoryId > 0) {
+            // Update existing category
+            $stmt = $pdo->prepare("UPDATE categories SET name = ?, description = ? WHERE id = ?");
+            if ($stmt->execute([$name, $desc, $categoryId])) {
+                $_SESSION['success_message'] = "Category updated successfully.";
+                header("Location: categories.php");
+                exit;
+            } else {
+                $errors[] = "Failed to update category.";
+            }
         } else {
-            $errors[] = "Failed to add category.";
+            // Insert new category
+            $stmt = $pdo->prepare("INSERT INTO categories (name, description) VALUES (?, ?)");
+            if ($stmt->execute([$name, $desc])) {
+                $_SESSION['success_message'] = "Category added successfully.";
+                header("Location: categories.php");
+                exit;
+            } else {
+                $errors[] = "Failed to add category.";
+            }
         }
     }
 }
@@ -56,7 +101,7 @@ $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
         <?php else: ?>
             <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0">Add Category</h5>
+                    <h5 class="mb-0"><?= $editCategory ? 'Edit Category' : 'Add Category' ?></h5>
                 </div>
                 <div class="card-body">
                     <?php if (!empty($errors)): ?>
@@ -73,17 +118,23 @@ $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
                     <?php endif; ?>
 
                     <form method="post">
+                        <input type="hidden" name="category_id" value="<?= $editCategory['id'] ?? 0 ?>">
                         <div class="mb-3">
                             <label class="form-label">Category Name</label>
                             <input type="text" name="name" class="form-control"
-                                   value="<?= htmlspecialchars($_POST['name'] ?? '') ?>" required>
+                                   value="<?= htmlspecialchars($editCategory['name'] ?? $_POST['name'] ?? '') ?>" required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Description (optional)</label>
                             <input type="text" name="description" class="form-control"
-                                   value="<?= htmlspecialchars($_POST['description'] ?? '') ?>">
+                                   value="<?= htmlspecialchars($editCategory['description'] ?? $_POST['description'] ?? '') ?>">
                         </div>
-                        <button type="submit" class="btn btn-primary">Save Category</button>
+                        <button type="submit" class="btn btn-primary">
+                            <?= $editCategory ? 'Update Category' : 'Save Category' ?>
+                        </button>
+                        <?php if ($editCategory): ?>
+                            <a href="categories.php" class="btn btn-secondary">Cancel</a>
+                        <?php endif; ?>
                     </form>
                 </div>
             </div>
@@ -101,12 +152,13 @@ $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
                                 <th>Name</th>
                                 <th>Description</th>
                                 <th>Created At</th>
+                                <th>Actions</th>
                             </tr>
                             </thead>
                             <tbody>
                             <?php if (empty($categories)): ?>
                                 <tr>
-                                    <td colspan="4" class="text-center py-3">No categories found.</td>
+                                    <td colspan="5" class="text-center py-3">No categories found.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($categories as $c): ?>
@@ -115,6 +167,12 @@ $categories = $categoryStmt->fetchAll(PDO::FETCH_ASSOC);
                                         <td><?= htmlspecialchars($c['name']) ?></td>
                                         <td><?= htmlspecialchars($c['description']) ?></td>
                                         <td><?= htmlspecialchars($c['created_at']) ?></td>
+                                        <td>
+                                            <a href="categories.php?edit=<?= $c['id'] ?>" class="btn btn-sm btn-warning">Edit</a>
+                                            <a href="categories.php?delete=<?= $c['id'] ?>"
+                                               class="btn btn-sm btn-danger"
+                                               onclick="return confirm('Are you sure you want to delete this category?')">Delete</a>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>

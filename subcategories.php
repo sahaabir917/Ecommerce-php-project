@@ -10,17 +10,47 @@ $roleName = $_SESSION['role_name'] ?? '';
 $isAdminOrManager = in_array($roleName, ['Admin', 'Manager'], true);
 
 $errors = [];
-$success = "";
+$success = $_SESSION['success_message'] ?? "";
+unset($_SESSION['success_message']);
+if (!empty($_SESSION['error_message'])) {
+    $errors[] = $_SESSION['error_message'];
+    unset($_SESSION['error_message']);
+}
+$editSubcategory = null;
 
 // Fetch categories for dropdown
 $catStmt = $pdo->query("SELECT id, name FROM categories ORDER BY name ASC");
 $categories = $catStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Handle Add Subcategory
+// Handle Delete
+if ($isAdminOrManager && isset($_GET['delete'])) {
+    $deleteId = (int)$_GET['delete'];
+    try {
+        $stmt = $pdo->prepare("DELETE FROM subcategories WHERE id = ?");
+        if ($stmt->execute([$deleteId])) {
+            $_SESSION['success_message'] = "Subcategory deleted successfully.";
+        }
+    } catch (PDOException $e) {
+        $_SESSION['error_message'] = "Cannot delete subcategory. It may be in use by products.";
+    }
+    header("Location: subcategories.php");
+    exit;
+}
+
+// Handle Edit - Load subcategory data
+if ($isAdminOrManager && isset($_GET['edit'])) {
+    $editId = (int)$_GET['edit'];
+    $stmt = $pdo->prepare("SELECT * FROM subcategories WHERE id = ?");
+    $stmt->execute([$editId]);
+    $editSubcategory = $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
+// Handle Add/Update Subcategory
 if ($isAdminOrManager && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $category_id = (int)($_POST['category_id'] ?? 0);
     $name = trim($_POST['name'] ?? '');
     $desc = trim($_POST['description'] ?? '');
+    $subcategoryId = (int)($_POST['subcategory_id'] ?? 0);
 
     if ($category_id <= 0) {
         $errors[] = "Parent category is required.";
@@ -30,11 +60,26 @@ if ($isAdminOrManager && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-        $stmt = $pdo->prepare("INSERT INTO subcategories (category_id, name, description) VALUES (?, ?, ?)");
-        if ($stmt->execute([$category_id, $name, $desc])) {
-            $success = "Subcategory added successfully.";
+        if ($subcategoryId > 0) {
+            // Update existing subcategory
+            $stmt = $pdo->prepare("UPDATE subcategories SET category_id = ?, name = ?, description = ? WHERE id = ?");
+            if ($stmt->execute([$category_id, $name, $desc, $subcategoryId])) {
+                $_SESSION['success_message'] = "Subcategory updated successfully.";
+                header("Location: subcategories.php");
+                exit;
+            } else {
+                $errors[] = "Failed to update subcategory.";
+            }
         } else {
-            $errors[] = "Failed to add subcategory.";
+            // Insert new subcategory
+            $stmt = $pdo->prepare("INSERT INTO subcategories (category_id, name, description) VALUES (?, ?, ?)");
+            if ($stmt->execute([$category_id, $name, $desc])) {
+                $_SESSION['success_message'] = "Subcategory added successfully.";
+                header("Location: subcategories.php");
+                exit;
+            } else {
+                $errors[] = "Failed to add subcategory.";
+            }
         }
     }
 }
@@ -69,7 +114,7 @@ $subcategories = $subStmt->fetchAll(PDO::FETCH_ASSOC);
         <?php else: ?>
             <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0">Add Subcategory</h5>
+                    <h5 class="mb-0"><?= $editSubcategory ? 'Edit Subcategory' : 'Add Subcategory' ?></h5>
                 </div>
                 <div class="card-body">
                     <?php if (!empty($errors)): ?>
@@ -86,13 +131,14 @@ $subcategories = $subStmt->fetchAll(PDO::FETCH_ASSOC);
                     <?php endif; ?>
 
                     <form method="post">
+                        <input type="hidden" name="subcategory_id" value="<?= $editSubcategory['id'] ?? 0 ?>">
                         <div class="mb-3">
                             <label class="form-label">Parent Category</label>
                             <select name="category_id" class="form-select" required>
                                 <option value="">-- Select Category --</option>
                                 <?php foreach ($categories as $c): ?>
                                     <option value="<?= $c['id'] ?>"
-                                        <?= (($_POST['category_id'] ?? '') == $c['id']) ? 'selected' : '' ?>>
+                                        <?= (($editSubcategory['category_id'] ?? $_POST['category_id'] ?? '') == $c['id']) ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($c['name']) ?>
                                     </option>
                                 <?php endforeach; ?>
@@ -101,14 +147,19 @@ $subcategories = $subStmt->fetchAll(PDO::FETCH_ASSOC);
                         <div class="mb-3">
                             <label class="form-label">Subcategory Name</label>
                             <input type="text" name="name" class="form-control"
-                                   value="<?= htmlspecialchars($_POST['name'] ?? '') ?>" required>
+                                   value="<?= htmlspecialchars($editSubcategory['name'] ?? $_POST['name'] ?? '') ?>" required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Description (optional)</label>
                             <input type="text" name="description" class="form-control"
-                                   value="<?= htmlspecialchars($_POST['description'] ?? '') ?>">
+                                   value="<?= htmlspecialchars($editSubcategory['description'] ?? $_POST['description'] ?? '') ?>">
                         </div>
-                        <button type="submit" class="btn btn-primary">Save Subcategory</button>
+                        <button type="submit" class="btn btn-primary">
+                            <?= $editSubcategory ? 'Update Subcategory' : 'Save Subcategory' ?>
+                        </button>
+                        <?php if ($editSubcategory): ?>
+                            <a href="subcategories.php" class="btn btn-secondary">Cancel</a>
+                        <?php endif; ?>
                     </form>
                 </div>
             </div>
@@ -127,12 +178,13 @@ $subcategories = $subStmt->fetchAll(PDO::FETCH_ASSOC);
                                 <th>Category</th>
                                 <th>Description</th>
                                 <th>Created At</th>
+                                <th>Actions</th>
                             </tr>
                             </thead>
                             <tbody>
                             <?php if (empty($subcategories)): ?>
                                 <tr>
-                                    <td colspan="5" class="text-center py-3">No subcategories found.</td>
+                                    <td colspan="6" class="text-center py-3">No subcategories found.</td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($subcategories as $s): ?>
@@ -142,6 +194,12 @@ $subcategories = $subStmt->fetchAll(PDO::FETCH_ASSOC);
                                         <td><?= htmlspecialchars($s['category_name']) ?></td>
                                         <td><?= htmlspecialchars($s['description']) ?></td>
                                         <td><?= htmlspecialchars($s['created_at']) ?></td>
+                                        <td>
+                                            <a href="subcategories.php?edit=<?= $s['id'] ?>" class="btn btn-sm btn-warning">Edit</a>
+                                            <a href="subcategories.php?delete=<?= $s['id'] ?>"
+                                               class="btn btn-sm btn-danger"
+                                               onclick="return confirm('Are you sure you want to delete this subcategory?')">Delete</a>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
