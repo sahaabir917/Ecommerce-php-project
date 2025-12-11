@@ -129,7 +129,13 @@ function productCard($p){
       <a href="cart.php" class="btn btn-outline-primary btn-sm">Cart (<?= $cartCount ?>)</a>
       <?php if (!empty($_SESSION['user_id'])): ?>
         <span class="text-muted small">Hi, <?= h($_SESSION['user_name'] ?? '') ?></span>
-        <a href="dashboard.php" class="btn btn-outline-secondary btn-sm">Dashboard</a>
+        <?php
+        $roleName = $_SESSION['role_name'] ?? '';
+        $isAdminOrManager = in_array($roleName, ['Admin', 'Manager'], true);
+        if ($isAdminOrManager):
+        ?>
+          <a href="dashboard.php" class="btn btn-outline-secondary btn-sm">Dashboard</a>
+        <?php endif; ?>
         <a href="logout.php" class="btn btn-outline-danger btn-sm">Logout</a>
       <?php else: ?>
         <a href="login.php" class="btn btn-outline-secondary btn-sm">Login</a>

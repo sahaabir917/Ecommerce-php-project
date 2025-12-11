@@ -22,6 +22,36 @@ if (isset($_SESSION['order_success'])) {
 if ($isAdminOrManager && isset($_GET['delete'])) {
     $deleteId = (int)$_GET['delete'];
 
+    try {
+        $pdo->beginTransaction();
+
+        // Delete order details first (due to foreign key)
+        $stmt = $pdo->prepare("DELETE FROM order_details WHERE order_id = ?");
+        $stmt->execute([$deleteId]);
+
+        // Then delete the order
+        $stmt = $pdo->prepare("DELETE FROM orders WHERE id = ?");
+        $stmt->execute([$deleteId]);
+
+        $pdo->commit();
+
+        $_SESSION['order_success'] = "Order deleted successfully.";
+        header("Location: orders.php");
+        exit;
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        $errors[] = "Failed to delete order: " . $e->getMessage();
+    }
+}
+
+// Fetch all orders with user and payment information
+$ordersStmt = $pdo->query("
+    SELECT o.id, o.order_date,
+           u.name AS user_name, u.email AS user_email,
+           p.card_number, p.card_holder_name, p.amount AS total_amount
+    FROM orders o
+    JOIN users u ON o.user_id = u.id
+    JOIN payments p ON o.payment_id = p.id
     // Delete order items first (due to foreign key)
     $stmt = $pdo->prepare("DELETE FROM order_items WHERE order_id = ?");
     $stmt->execute([$deleteId]);
@@ -205,16 +235,19 @@ $ordersStmt = $pdo->query("
 ");
 $orders = $ordersStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch order items for each order
+// Fetch order details for each order
 $orderItemsMap = [];
 if (!empty($orders)) {
     $orderIds = array_column($orders, 'id');
     $placeholders = str_repeat('?,', count($orderIds) - 1) . '?';
     $stmt = $pdo->prepare("
-        SELECT oi.order_id, oi.quantity, oi.price_at_purchase, p.name as product_name
-        FROM order_items oi
-        JOIN products p ON oi.product_id = p.id
-        WHERE oi.order_id IN ($placeholders)
+        SELECT od.order_id, od.quantity, od.unit_price, od.status,
+               p.name as product_name,
+               d.deal_name
+        FROM order_details od
+        LEFT JOIN products p ON od.product_id = p.id
+        LEFT JOIN deals d ON od.deal_id = d.id
+        WHERE od.order_id IN ($placeholders)
     ");
     $stmt->execute($orderIds);
     $allOrderItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -231,11 +264,12 @@ if (!empty($orders)) {
     <title>Orders</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <style>
-        .product-row {
-            background: #f8f9fa;
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 5px;
+        .order-row:hover {
+            background-color: #f8f9fa !important;
+            transition: background-color 0.2s ease;
+        }
+        .order-row {
+            cursor: pointer;
         }
     </style>
 </head>
@@ -251,142 +285,18 @@ if (!empty($orders)) {
                 You have no access to this URL.
             </div>
         <?php else: ?>
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0"><?= $editOrder ? 'Edit Order' : 'Add Order' ?></h5>
+            <?php if (!empty($errors)): ?>
+                <div class="alert alert-danger">
+                    <ul class="mb-0">
+                        <?php foreach ($errors as $e): ?>
+                            <li><?= htmlspecialchars($e) ?></li>
+                        <?php endforeach; ?>
+                    </ul>
                 </div>
-                <div class="card-body">
-                    <?php if (!empty($errors)): ?>
-                        <div class="alert alert-danger">
-                            <ul class="mb-0">
-                                <?php foreach ($errors as $e): ?>
-                                    <li><?= htmlspecialchars($e) ?></li>
-                                <?php endforeach; ?>
-                            </ul>
-                        </div>
-                    <?php endif; ?>
-                    <?php if ($success): ?>
-                        <div class="alert alert-success"><?= $success ?></div>
-                    <?php endif; ?>
-
-                    <form method="post" id="orderForm">
-                        <?php if ($editOrder): ?>
-                            <input type="hidden" name="order_id" value="<?= $editOrder['id'] ?>">
-                        <?php endif; ?>
-
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Customer</label>
-                                <select name="user_id" class="form-select" required>
-                                    <option value="">-- Select Customer --</option>
-                                    <?php foreach ($users as $u): ?>
-                                        <option value="<?= $u['id'] ?>"
-                                            <?= (($editOrder['user_id'] ?? $_POST['user_id'] ?? '') == $u['id']) ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($u['name']) ?> (<?= htmlspecialchars($u['email']) ?>)
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Order Date</label>
-                                <input type="datetime-local" name="order_date" class="form-control"
-                                       value="<?= htmlspecialchars($editOrder ? date('Y-m-d\TH:i', strtotime($editOrder['order_date'])) : ($_POST['order_date'] ?? date('Y-m-d\TH:i'))) ?>" required>
-                            </div>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Card Number (optional)</label>
-                                <input type="text" name="card_number" class="form-control"
-                                       value="<?= htmlspecialchars($editOrder['card_number'] ?? $_POST['card_number'] ?? '') ?>"
-                                       placeholder="1234-5678-9012-3456">
-                            </div>
-
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Card Holder Name (optional)</label>
-                                <input type="text" name="card_holder_name" class="form-control"
-                                       value="<?= htmlspecialchars($editOrder['card_holder_name'] ?? $_POST['card_holder_name'] ?? '') ?>"
-                                       placeholder="John Doe">
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Order Status</label>
-                            <select name="status" class="form-select" required>
-                                <?php
-                                $statuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-                                $currentStatus = $editOrder['status'] ?? $_POST['status'] ?? 'pending';
-                                foreach ($statuses as $s):
-                                ?>
-                                    <option value="<?= $s ?>" <?= $currentStatus == $s ? 'selected' : '' ?>>
-                                        <?= ucfirst($s) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Order Items</label>
-                            <div id="productContainer">
-                                <?php if ($editOrder && !empty($editOrderItems)): ?>
-                                    <?php foreach ($editOrderItems as $index => $item): ?>
-                                        <div class="product-row">
-                                            <div class="row">
-                                                <div class="col-md-8">
-                                                    <select name="product_ids[]" class="form-select" required>
-                                                        <option value="">-- Select Product --</option>
-                                                        <?php foreach ($products as $p): ?>
-                                                            <option value="<?= $p['id'] ?>" <?= $item['product_id'] == $p['id'] ? 'selected' : '' ?>>
-                                                                <?= htmlspecialchars($p['name']) ?> - $<?= number_format($p['price'], 2) ?>
-                                                            </option>
-                                                        <?php endforeach; ?>
-                                                    </select>
-                                                </div>
-                                                <div class="col-md-3">
-                                                    <input type="number" name="quantities[]" class="form-control"
-                                                           placeholder="Qty" min="1" value="<?= $item['quantity'] ?>" required>
-                                                </div>
-                                                <div class="col-md-1">
-                                                    <button type="button" class="btn btn-danger btn-sm removeProduct">X</button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <div class="product-row">
-                                        <div class="row">
-                                            <div class="col-md-8">
-                                                <select name="product_ids[]" class="form-select" required>
-                                                    <option value="">-- Select Product --</option>
-                                                    <?php foreach ($products as $p): ?>
-                                                        <option value="<?= $p['id'] ?>">
-                                                            <?= htmlspecialchars($p['name']) ?> - $<?= number_format($p['price'], 2) ?>
-                                                        </option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-3">
-                                                <input type="number" name="quantities[]" class="form-control"
-                                                       placeholder="Qty" min="1" value="1" required>
-                                            </div>
-                                            <div class="col-md-1">
-                                                <button type="button" class="btn btn-danger btn-sm removeProduct">X</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                            <button type="button" class="btn btn-secondary btn-sm mt-2" id="addProduct">+ Add Another Product</button>
-                        </div>
-
-                        <button type="submit" class="btn btn-primary"><?= $editOrder ? 'Update Order' : 'Create Order' ?></button>
-                        <?php if ($editOrder): ?>
-                            <a href="orders.php" class="btn btn-secondary">Cancel</a>
-                        <?php endif; ?>
-                    </form>
-                </div>
-            </div>
+            <?php endif; ?>
+            <?php if ($success): ?>
+                <div class="alert alert-success"><?= $success ?></div>
+            <?php endif; ?>
 
             <div class="card">
                 <div class="card-header">
@@ -414,7 +324,7 @@ if (!empty($orders)) {
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($orders as $o): ?>
-                                    <tr>
+                                    <tr class="order-row" data-order-id="<?= $o['id'] ?>" style="cursor: pointer;">
                                         <td><?= $o['id'] ?></td>
                                         <td>
                                             <strong><?= htmlspecialchars($o['user_name']) ?></strong><br>
@@ -425,7 +335,11 @@ if (!empty($orders)) {
                                             <?php if (isset($orderItemsMap[$o['id']])): ?>
                                                 <?php foreach ($orderItemsMap[$o['id']] as $item): ?>
                                                     <small>
-                                                        <?= htmlspecialchars($item['product_name']) ?>
+                                                        <?php
+                                                        // Show product name or deal name
+                                                        $itemName = $item['product_name'] ?? $item['deal_name'] ?? 'Unknown Item';
+                                                        echo htmlspecialchars($itemName);
+                                                        ?>
                                                         (x<?= $item['quantity'] ?>)
                                                     </small><br>
                                                 <?php endforeach; ?>
@@ -443,17 +357,19 @@ if (!empty($orders)) {
                                             <?php endif; ?>
                                         </td>
                                         <td>
+                                            <?php
+                                            // Get status from first order detail item
+                                            $orderStatus = isset($orderItemsMap[$o['id']][0]['status']) ? $orderItemsMap[$o['id']][0]['status'] : 'pending';
+                                            ?>
                                             <span class="badge bg-<?=
-                                                $o['status'] == 'delivered' ? 'success' :
-                                                ($o['status'] == 'cancelled' ? 'danger' :
-                                                ($o['status'] == 'shipped' ? 'info' :
-                                                ($o['status'] == 'processing' ? 'warning' : 'secondary')))
+                                                $orderStatus == 'shipped' ? 'success' :
+                                                ($orderStatus == 'cancelled' ? 'danger' :
+                                                ($orderStatus == 'confirmed' ? 'info' : 'secondary'))
                                             ?>">
-                                                <?= ucfirst($o['status']) ?>
+                                                <?= ucfirst($orderStatus) ?>
                                             </span>
                                         </td>
-                                        <td>
-                                            <a href="orders.php?edit=<?= $o['id'] ?>" class="btn btn-sm btn-warning">Edit</a>
+                                        <td onclick="event.stopPropagation();">
                                             <a href="orders.php?delete=<?= $o['id'] ?>"
                                                class="btn btn-sm btn-danger"
                                                onclick="return confirm('Are you sure you want to delete this order?')">Delete</a>
@@ -472,52 +388,13 @@ if (!empty($orders)) {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const productContainer = document.getElementById('productContainer');
-    const addProductBtn = document.getElementById('addProduct');
-
-    // Product options HTML
-    const productOptions = `
-        <option value="">-- Select Product --</option>
-        <?php foreach ($products as $p): ?>
-            <option value="<?= $p['id'] ?>">
-                <?= htmlspecialchars($p['name']) ?> - $<?= number_format($p['price'], 2) ?>
-            </option>
-        <?php endforeach; ?>
-    `;
-
-    // Add product row
-    addProductBtn.addEventListener('click', function() {
-        const newRow = document.createElement('div');
-        newRow.className = 'product-row';
-        newRow.innerHTML = `
-            <div class="row">
-                <div class="col-md-8">
-                    <select name="product_ids[]" class="form-select" required>
-                        ${productOptions}
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <input type="number" name="quantities[]" class="form-control"
-                           placeholder="Qty" min="1" value="1" required>
-                </div>
-                <div class="col-md-1">
-                    <button type="button" class="btn btn-danger btn-sm removeProduct">X</button>
-                </div>
-            </div>
-        `;
-        productContainer.appendChild(newRow);
-    });
-
-    // Remove product row
-    productContainer.addEventListener('click', function(e) {
-        if (e.target.classList.contains('removeProduct')) {
-            const productRows = productContainer.querySelectorAll('.product-row');
-            if (productRows.length > 1) {
-                e.target.closest('.product-row').remove();
-            } else {
-                alert('At least one product is required.');
-            }
-        }
+    // Make order rows clickable to view details
+    const orderRows = document.querySelectorAll('.order-row');
+    orderRows.forEach(function(row) {
+        row.addEventListener('click', function() {
+            const orderId = this.getAttribute('data-order-id');
+            window.location.href = 'order_details.php?id=' + orderId;
+        });
     });
 });
 </script>

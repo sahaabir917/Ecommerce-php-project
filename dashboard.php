@@ -167,6 +167,79 @@ if ($isAdminOrManager && isset($_GET['edit'])) {
 $rolesStmt = $pdo->query("SELECT id, name FROM roles ORDER BY id ASC");
 $roles = $rolesStmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Get selected week (default to current week)
+$selectedWeek = $_GET['week'] ?? date('Y-\WW');
+
+// Calculate the start and end date of the selected week
+$weekYear = substr($selectedWeek, 0, 4);
+$weekNumber = substr($selectedWeek, 6);
+$startDate = new DateTime();
+$startDate->setISODate($weekYear, $weekNumber);
+$startDateStr = $startDate->format('Y-m-d');
+$endDate = clone $startDate;
+$endDate->modify('+6 days');
+$endDateStr = $endDate->format('Y-m-d');
+
+// Fetch daily sales for the selected week
+$dailySalesStmt = $pdo->prepare("
+    SELECT DATE(o.order_date) as sale_date,
+           SUM(od.unit_price * od.quantity) as daily_total
+    FROM orders o
+    JOIN order_details od ON o.id = od.order_id
+    WHERE DATE(o.order_date) BETWEEN ? AND ?
+    GROUP BY DATE(o.order_date)
+    ORDER BY sale_date ASC
+");
+$dailySalesStmt->execute([$startDateStr, $endDateStr]);
+$dailySalesData = $dailySalesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Create array with all days of the week (even if no sales)
+$dailySales = [];
+$totalWeeklySales = 0;
+$currentDate = clone $startDate;
+
+for ($i = 0; $i < 7; $i++) {
+    $dateStr = $currentDate->format('Y-m-d');
+    $dayName = $currentDate->format('D'); // Mon, Tue, Wed, etc.
+
+    // Find sales for this date
+    $dayTotal = 0;
+    foreach ($dailySalesData as $row) {
+        if ($row['sale_date'] === $dateStr) {
+            $dayTotal = (float)$row['daily_total'];
+            break;
+        }
+    }
+
+    $dailySales[] = [
+        'date' => $dateStr,
+        'day' => $dayName,
+        'total' => $dayTotal
+    ];
+
+    $totalWeeklySales += $dayTotal;
+    $currentDate->modify('+1 day');
+}
+
+// Generate weeks for dropdown (last 12 weeks)
+$weekOptions = [];
+$tempDate = new DateTime();
+for ($i = 0; $i < 12; $i++) {
+    $year = $tempDate->format('Y');
+    $week = $tempDate->format('W');
+    $weekValue = $year . '-W' . $week;
+    $weekLabel = 'Week ' . $week . ', ' . $year;
+
+    $tempStart = clone $tempDate;
+    $tempStart->setISODate($year, $week);
+    $tempEnd = clone $tempStart;
+    $tempEnd->modify('+6 days');
+    $weekLabel .= ' (' . $tempStart->format('M d') . ' - ' . $tempEnd->format('M d') . ')';
+
+    $weekOptions[] = ['value' => $weekValue, 'label' => $weekLabel];
+    $tempDate->modify('-1 week');
+}
+
 // Fetch all users
 $users = [];
 if ($isAdminOrManager) {
@@ -185,19 +258,72 @@ if ($isAdminOrManager) {
     <meta charset="UTF-8">
     <title>Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="d-flex">
     <?php include 'sidebar.php'; ?>
 
     <main class="flex-grow-1 bg-light p-4">
-        <h3 class="mb-3">Dashboard</h3>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h3 class="mb-0">Dashboard</h3>
+            <?php if ($isAdminOrManager): ?>
+                <a href="index.php" class="btn btn-success">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-shop" viewBox="0 0 16 16">
+                        <path d="M2.97 1.35A1 1 0 0 1 3.73 1h8.54a1 1 0 0 1 .76.35l2.609 3.044A1.5 1.5 0 0 1 16 5.37v.255a2.375 2.375 0 0 1-4.25 1.458A2.37 2.37 0 0 1 9.875 8 2.37 2.37 0 0 1 8 7.083 2.37 2.37 0 0 1 6.125 8a2.37 2.37 0 0 1-1.875-.917A2.375 2.375 0 0 1 0 5.625V5.37a1.5 1.5 0 0 1 .361-.976zm1.78 4.275a1.375 1.375 0 0 0 2.75 0 .5.5 0 0 1 1 0 1.375 1.375 0 0 0 2.75 0 .5.5 0 0 1 1 0 1.375 1.375 0 1 0 2.75 0V5.37a.5.5 0 0 0-.12-.325L12.27 2H3.73L1.12 5.045A.5.5 0 0 0 1 5.37v.255a1.375 1.375 0 0 0 2.75 0 .5.5 0 0 1 1 0M1.5 8.5A.5.5 0 0 1 2 9v6h1v-5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v5h6V9a.5.5 0 0 1 1 0v6h.5a.5.5 0 0 1 0 1H.5a.5.5 0 0 1 0-1H1V9a.5.5 0 0 1 .5-.5M4 15h3v-5H4zm5-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1zm3 0h-2v3h2z"/>
+                    </svg>
+                    View Shop
+                </a>
+            <?php endif; ?>
+        </div>
 
         <?php if ($isAdminOrManager): ?>
             <p class="text-muted">
                 You are an <strong><?= htmlspecialchars($roleName) ?></strong>.
                 You can manage users, categories, subcategories, and products.
             </p>
+
+            <!-- Weekly Sales Analytics Section -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Weekly Sales Analytics</h5>
+                        <form method="get" class="d-flex align-items-center gap-2">
+                            <label class="mb-0 text-white">Select Week:</label>
+                            <select name="week" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+                                <?php foreach ($weekOptions as $wo): ?>
+                                    <option value="<?= htmlspecialchars($wo['value']) ?>"
+                                        <?= $wo['value'] === $selectedWeek ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($wo['label']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </form>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <div class="alert alert-info mb-0">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>Total Sales for Selected Week:</strong>
+                                        <span class="fs-4 ms-2">$<?= number_format($totalWeeklySales, 2) ?></span>
+                                    </div>
+                                    <div class="text-muted">
+                                        <?= $startDate->format('M d, Y') ?> - <?= $endDate->format('M d, Y') ?>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12">
+                            <canvas id="salesChart" height="80"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <div class="card mb-4">
                 <div class="card-header">
@@ -355,5 +481,57 @@ if ($isAdminOrManager) {
         <?php endif; ?>
     </main>
 </div>
+
+<?php if ($isAdminOrManager): ?>
+<script>
+    // Prepare data for Chart.js
+    const salesData = <?= json_encode($dailySales) ?>;
+    const labels = salesData.map(day => `${day.day}\n${day.date}`);
+    const data = salesData.map(day => day.total);
+
+    // Create the bar chart
+    const ctx = document.getElementById('salesChart').getContext('2d');
+    const salesChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Daily Sales ($)',
+                data: data,
+                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toFixed(2);
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'Sales: $' + context.parsed.y.toFixed(2);
+                        }
+                    }
+                }
+            }
+        }
+    });
+</script>
+<?php endif; ?>
 </body>
 </html>

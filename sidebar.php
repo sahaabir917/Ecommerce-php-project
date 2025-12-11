@@ -33,6 +33,11 @@ $isAdminOrManager = in_array($roleName, ['Admin', 'Manager'], true);
                 </a>
             </li>
             <li>
+                <a href="deals_admin.php" class="nav-link text-white <?= basename($_SERVER['PHP_SELF']) === 'deals_admin.php' ? 'active' : '' ?>">
+                    Deals
+                </a>
+            </li>
+            <li>
                 <a href="orders.php" class="nav-link text-white <?= basename($_SERVER['PHP_SELF']) === 'orders.php' ? 'active' : '' ?>">
                     Orders
                 </a>
